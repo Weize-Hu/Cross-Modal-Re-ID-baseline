@@ -3,13 +3,14 @@ import os
 import numpy as np
 import random
 
+
 def process_query_sysu(data_path, mode = 'all', relabel=False):
-    if mode== 'all':
+    if mode == 'all':
         ir_cameras = ['cam3','cam6']
-    elif mode =='indoor':
+    elif mode == 'indoor':
         ir_cameras = ['cam3','cam6']
-    
-    file_path = os.path.join(data_path,'exp/test_id.txt')
+
+    file_path = os.path.join(data_path, 'exp/test_id.txt')
     files_rgb = []
     files_ir = []
 
@@ -20,9 +21,9 @@ def process_query_sysu(data_path, mode = 'all', relabel=False):
 
     for id in sorted(ids):
         for cam in ir_cameras:
-            img_dir = os.path.join(data_path,cam,id)
+            img_dir = os.path.join(data_path, cam, id)
             if os.path.isdir(img_dir):
-                new_files = sorted([img_dir+'/'+i for i in os.listdir(img_dir)])
+                new_files = sorted([img_dir + '/' + i for i in os.listdir(img_dir)])
                 files_ir.extend(new_files)
     query_img = []
     query_id = []
@@ -34,16 +35,16 @@ def process_query_sysu(data_path, mode = 'all', relabel=False):
         query_cam.append(camid)
     return query_img, np.array(query_id), np.array(query_cam)
 
+
 def process_gallery_sysu(data_path, mode = 'all', trial = 0, relabel=False):
-    
     random.seed(trial)
-    
-    if mode== 'all':
+
+    if mode == 'all':
         rgb_cameras = ['cam1','cam2','cam4','cam5']
-    elif mode =='indoor':
+    elif mode == 'indoor':
         rgb_cameras = ['cam1','cam2']
-        
-    file_path = os.path.join(data_path,'exp/test_id.txt')
+
+    file_path = os.path.join(data_path, 'exp/test_id.txt')
     files_rgb = []
     with open(file_path, 'r') as file:
         ids = file.read().splitlines()
@@ -52,10 +53,11 @@ def process_gallery_sysu(data_path, mode = 'all', trial = 0, relabel=False):
 
     for id in sorted(ids):
         for cam in rgb_cameras:
-            img_dir = os.path.join(data_path,cam,id)
+            img_dir = os.path.join(data_path, cam, id)
             if os.path.isdir(img_dir):
-                new_files = sorted([img_dir+'/'+i for i in os.listdir(img_dir)])
-                files_rgb.append(random.choice(new_files))
+                new_files = sorted([img_dir + '/' + i for i in os.listdir(img_dir)])
+                files_rgb.append(random.choice(new_files)) # 每个人在每个RGB cam下随机选择一张图片
+
     gall_img = []
     gall_id = []
     gall_cam = []
@@ -65,7 +67,8 @@ def process_gallery_sysu(data_path, mode = 'all', trial = 0, relabel=False):
         gall_id.append(pid)
         gall_cam.append(camid)
     return gall_img, np.array(gall_id), np.array(gall_cam)
-    
+
+
 def process_test_regdb(img_dir, trial = 1, modal = 'visible'):
     if modal=='visible':
         input_data_path = img_dir + 'idx/test_visible_{}'.format(trial) + '.txt'

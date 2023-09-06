@@ -1,26 +1,30 @@
 from __future__ import print_function
+import os
 import argparse
 import sys
 import time
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 import torch.utils.data as data
-import torchvision
 import torchvision.transforms as transforms
+
 from data_loader import SYSUData, RegDBData, TestData
-from data_manager import *
+from data_manager import process_query_sysu, process_gallery_sysu, process_test_regdb
 from eval_metrics import eval_sysu, eval_regdb
 from model import embed_net
-from utils import *
+from utils import GenIdx, set_seed, AverageMeter, Logger, IdentitySampler
 from loss import OriTripletLoss, TripletLoss_WRT
 from tensorboardX import SummaryWriter
 
+
 parser = argparse.ArgumentParser(description='PyTorch Cross-Modality Training')
 parser.add_argument('--dataset', default='sysu', help='dataset name: regdb or sysu]')
-parser.add_argument('--lr', default=0.1 , type=float, help='learning rate, 0.00035 for adam')
+parser.add_argument('--lr', default=0.1, type=float, help='learning rate, 0.00035 for adam')
 parser.add_argument('--optim', default='sgd', type=str, help='optimizer')
 parser.add_argument('--arch', default='resnet50', type=str,
                     help='network baseline:resnet18 or resnet50')
@@ -84,7 +88,7 @@ if not os.path.isdir(args.vis_log_path):
     os.makedirs(args.vis_log_path)
 
 suffix = dataset
-if args.method=='agw':
+if args.method == 'agw':
     suffix = suffix + '_agw_p{}_n{}_lr_{}_seed_{}'.format(args.num_pos, args.batch_size, args.lr, args.seed)
 else:
     suffix = suffix + '_base_p{}_n{}_lr_{}_seed_{}'.format(args.num_pos, args.batch_size, args.lr, args.seed)
@@ -171,10 +175,10 @@ print('  ------------------------------')
 print('Data Loading Time:\t {:.3f}'.format(time.time() - end))
 
 print('==> Building model..')
-if args.method =='base':
-    net = embed_net(n_class, no_local= 'off', gm_pool =  'off', arch=args.arch)
+if args.method == 'base':
+    net = embed_net(n_class, no_local='off', gm_pool='off', arch=args.arch)
 else:
-    net = embed_net(n_class, no_local= 'on', gm_pool = 'on', arch=args.arch)
+    net = embed_net(n_class, no_local='on', gm_pool='on', arch=args.arch)
 net.to(device)
 cudnn.benchmark = True
 
@@ -196,11 +200,10 @@ if args.method == 'agw':
     criterion_tri = TripletLoss_WRT()
 else:
     loader_batch = args.batch_size * args.num_pos
-    criterion_tri= OriTripletLoss(batch_size=loader_batch, margin=args.margin)
+    criterion_tri = OriTripletLoss(batch_size=loader_batch, margin=args.margin)
 
 criterion_id.to(device)
 criterion_tri.to(device)
-
 
 if args.optim == 'sgd':
     ignored_params = list(map(id, net.bottleneck.parameters())) \
@@ -214,9 +217,13 @@ if args.optim == 'sgd':
         {'params': net.classifier.parameters(), 'lr': args.lr}],
         weight_decay=5e-4, momentum=0.9, nesterov=True)
 
+
 # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+    """
+    Sets the learning rate to the initial
+    LR decayed by 10 every 30 epochs
+    """
     if epoch < 10:
         lr = args.lr * (epoch + 1) / 10
     elif epoch >= 10 and epoch < 20:
@@ -234,7 +241,6 @@ def adjust_learning_rate(optimizer, epoch):
 
 
 def train(epoch):
-
     current_lr = adjust_learning_rate(optimizer, epoch)
     train_loss = AverageMeter()
     id_loss = AverageMeter()
@@ -249,15 +255,11 @@ def train(epoch):
     end = time.time()
 
     for batch_idx, (input1, input2, label1, label2) in enumerate(trainloader):
-
         labels = torch.cat((label1, label2), 0)
-
         input1 = Variable(input1.cuda())
         input2 = Variable(input2.cuda())
-
         labels = Variable(labels.cuda())
         data_time.update(time.time() - end)
-
 
         feat, out0, = net(input1, input2)
 
@@ -291,7 +293,7 @@ def train(epoch):
                   'Accu: {:.2f}'.format(
                 epoch, batch_idx, len(trainloader), current_lr,
                 100. * correct / total, batch_time=batch_time,
-                train_loss=train_loss, id_loss=id_loss, tri_loss=tri_loss))
+                train_loss = train_loss, id_loss=id_loss, tri_loss=tri_loss))
 
     writer.add_scalar('total_loss', train_loss.avg, epoch)
     writer.add_scalar('id_loss', id_loss.avg, epoch)
@@ -311,7 +313,7 @@ def test(epoch):
         for batch_idx, (input, label) in enumerate(gall_loader):
             batch_num = input.size(0)
             input = Variable(input.cuda())
-            feat, feat_att = net(input, input, test_mode[0])
+            feat, feat_att = net(input, input, test_mode[0])  # BN前后的feature
             gall_feat[ptr:ptr + batch_num, :] = feat.detach().cpu().numpy()
             gall_feat_att[ptr:ptr + batch_num, :] = feat_att.detach().cpu().numpy()
             ptr = ptr + batch_num
@@ -341,8 +343,8 @@ def test(epoch):
 
     # evaluation
     if dataset == 'regdb':
-        cmc, mAP, mINP      = eval_regdb(-distmat, query_label, gall_label)
-        cmc_att, mAP_att, mINP_att  = eval_regdb(-distmat_att, query_label, gall_label)
+        cmc, mAP, mINP = eval_regdb(-distmat, query_label, gall_label)
+        cmc_att, mAP_att, mINP_att = eval_regdb(-distmat_att, query_label, gall_label)
     elif dataset == 'sysu':
         cmc, mAP, mINP = eval_sysu(-distmat, query_label, gall_label, query_cam, gall_cam)
         cmc_att, mAP_att, mINP_att = eval_sysu(-distmat_att, query_label, gall_label, query_cam, gall_cam)
@@ -363,9 +365,10 @@ for epoch in range(start_epoch, 81 - start_epoch):
 
     print('==> Preparing Data Loader...')
     # identity sampler
-    sampler = IdentitySampler(trainset.train_color_label, \
-                              trainset.train_thermal_label, color_pos, thermal_pos, args.num_pos, args.batch_size,
-                              epoch)
+    sampler = IdentitySampler(trainset.train_color_label,
+                              trainset.train_thermal_label,
+                              color_pos, thermal_pos,
+                              args.num_pos, args.batch_size, epoch)
 
     trainset.cIndex = sampler.index1  # color index
     trainset.tIndex = sampler.index2  # thermal index
@@ -375,8 +378,9 @@ for epoch in range(start_epoch, 81 - start_epoch):
 
     loader_batch = args.batch_size * args.num_pos
 
-    trainloader = data.DataLoader(trainset, batch_size=loader_batch, \
-                                  sampler=sampler, num_workers=args.workers, drop_last=True)
+    trainloader = data.DataLoader(trainset, batch_size=loader_batch,
+                                  sampler=sampler, num_workers=args.workers,
+                                  drop_last=True)
 
     # training
     train(epoch)

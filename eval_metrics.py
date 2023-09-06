@@ -1,11 +1,13 @@
 from __future__ import print_function, absolute_import
 import numpy as np
-"""Cross-Modality ReID"""
 import pdb
 
+
 def eval_sysu(distmat, q_pids, g_pids, q_camids, g_camids, max_rank = 20):
-    """Evaluation with sysu metric
-    Key: for each query identity, its gallery images from the same camera view are discarded. "Following the original setting in ite dataset"
+    """
+    Evaluation with sysu metric
+    Key: for each query identity, its gallery images from the same camera view are discarded.
+         "Following the original setting in ite dataset"
     """
     num_q, num_g = distmat.shape
     if num_g < max_rank:
@@ -24,10 +26,10 @@ def eval_sysu(distmat, q_pids, g_pids, q_camids, g_camids, max_rank = 20):
     for q_idx in range(num_q):
         # get query pid and camid
         q_pid = q_pids[q_idx]
-        q_camid = q_camids[q_idx]
+        q_camid = q_camids[q_idx]  # 每个query对应的id和cam
 
         # remove gallery samples that have the same pid and camid with query
-        order = indices[q_idx]
+        order = indices[q_idx]  # q对应g的相似度从低到高的下标
         remove = (q_camid == 3) & (g_camids[order] == 2)
         keep = np.invert(remove)
         
@@ -47,27 +49,27 @@ def eval_sysu(distmat, q_pids, g_pids, q_camids, g_camids, max_rank = 20):
             # this condition is true when query identity does not appear in gallery
             continue
 
-        cmc = orig_cmc.cumsum()
+        cmc = orig_cmc.cumsum()  # 当前q在每个g上累计匹配个数
 
         # compute mINP
         # refernece Deep Learning for Person Re-identification: A Survey and Outlook
         pos_idx = np.where(orig_cmc == 1)
-        pos_max_idx = np.max(pos_idx)
-        inp = cmc[pos_max_idx]/ (pos_max_idx + 1.0)
+        pos_max_idx = np.max(pos_idx)  # 最后一个正确匹配的下标
+        inp = cmc[pos_max_idx]/ (pos_max_idx + 1.0)  # 一共正确匹配个数/到最后一个正确匹配总共查询了几个
         all_INP.append(inp)
 
         cmc[cmc > 1] = 1
 
-        all_cmc.append(cmc[:max_rank])
+        all_cmc.append(cmc[:max_rank])  # 截取部分cmc
         num_valid_q += 1.
 
         # compute average precision
         # reference: https://en.wikipedia.org/wiki/Evaluation_measures_(information_retrieval)#Average_precision
-        num_rel = orig_cmc.sum()
+        num_rel = orig_cmc.sum()  # 总正确个数
         tmp_cmc = orig_cmc.cumsum()
-        tmp_cmc = [x / (i+1.) for i, x in enumerate(tmp_cmc)]
-        tmp_cmc = np.asarray(tmp_cmc) * orig_cmc
-        AP = tmp_cmc.sum() / num_rel
+        tmp_cmc = [x / (i + 1.) for i, x in enumerate(tmp_cmc)]  # 每个点的Precision
+        tmp_cmc = np.asarray(tmp_cmc) * orig_cmc  # 正确点的Precision（只有相同类别才计算）
+        AP = tmp_cmc.sum() / num_rel  # AP
         all_AP.append(AP)
 
     assert num_valid_q > 0, "Error: all query identities do not appear in gallery"
@@ -80,9 +82,8 @@ def eval_sysu(distmat, q_pids, g_pids, q_camids, g_camids, max_rank = 20):
     mAP = np.mean(all_AP)
     mINP = np.mean(all_INP)
     return new_all_cmc, mAP, mINP
-    
-    
-    
+
+
 def eval_regdb(distmat, q_pids, g_pids, max_rank = 20):
     num_q, num_g = distmat.shape
     if num_g < max_rank:
@@ -100,7 +101,7 @@ def eval_regdb(distmat, q_pids, g_pids, max_rank = 20):
     # only two cameras
     q_camids = np.ones(num_q).astype(np.int32)
     g_camids = 2* np.ones(num_g).astype(np.int32)
-    
+
     for q_idx in range(num_q):
         # get query pid and camid
         q_pid = q_pids[q_idx]
